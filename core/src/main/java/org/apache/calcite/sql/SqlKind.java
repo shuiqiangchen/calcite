@@ -702,6 +702,10 @@ public enum SqlKind {
    */
   LATERAL,
 
+  JSON_TABLE,
+
+  JSON_TABLE_PLAN,
+
   /**
    * Table operator which converts user-defined transform into a relation, for
    * example, <code>select * from TABLE(udx(x, y, z))</code>. See also the
@@ -1192,7 +1196,7 @@ public enum SqlKind {
               EnumSet.of(AS, ARGUMENT_ASSIGNMENT, DEFAULT,
                   RUNNING, FINAL, LAST, FIRST, PREV, NEXT,
                   FILTER, WITHIN_GROUP, IGNORE_NULLS, RESPECT_NULLS, SEPARATOR,
-                  DESCENDING, CUBE, ROLLUP, GROUPING_SETS, EXTEND, LATERAL,
+                  DESCENDING, CUBE, ROLLUP, GROUPING_SETS, EXTEND, LATERAL, JSON_TABLE,
                   SELECT, JOIN, OTHER_FUNCTION, POSITION, CAST, TRIM, FLOOR, CEIL,
                   TIMESTAMP_ADD, TIMESTAMP_DIFF, EXTRACT, INTERVAL,
                   LITERAL_CHAIN, JDBC_FN, PRECEDING, FOLLOWING, ORDER_BY,

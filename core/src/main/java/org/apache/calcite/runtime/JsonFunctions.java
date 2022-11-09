@@ -16,11 +16,7 @@
  */
 package org.apache.calcite.runtime;
 
-import org.apache.calcite.sql.SqlJsonConstructorNullClause;
-import org.apache.calcite.sql.SqlJsonExistsErrorBehavior;
-import org.apache.calcite.sql.SqlJsonQueryEmptyOrErrorBehavior;
-import org.apache.calcite.sql.SqlJsonQueryWrapperBehavior;
-import org.apache.calcite.sql.SqlJsonValueEmptyOrErrorBehavior;
+import org.apache.calcite.sql.*;
 import org.apache.calcite.util.Util;
 
 import com.fasterxml.jackson.annotation.JsonValue;
@@ -373,6 +369,54 @@ public class JsonFunctions {
       throw RESOURCE.illegalErrorBehaviorInJsonQueryFunc(
           errorBehavior.toString()).ex();
     }
+  }
+
+  public static Object jsonTable(
+      String input,
+      String pathSpec,
+      Object columnInfos,
+      Object planClause,
+      SqlJsonTableErrorBehavior errorBehavior) {
+
+      JsonPathContext pathContext = jsonApiCommonSyntax(input, pathSpec);
+      return null;
+
+  }
+
+  private static class JsonTableParser {
+    private final List<SqlJsonTableColumn> columns;
+    private final List<SqlNode> planClause;
+    private final SqlJsonTableErrorBehavior errorBehavior;
+    public JsonTableParser(
+        List<SqlJsonTableColumn> columns,
+        List<SqlNode> planClause,
+        SqlJsonTableErrorBehavior errorBehavior) {
+        this.columns = columns;
+        this.planClause = planClause;
+        this.errorBehavior = errorBehavior;
+    }
+
+    private Object parserOrdinarilyColumn() {
+      return null;
+    }
+
+    private Object parseRegularColumn(
+        JsonValueContext input
+//        String jsonPathSpec,
+        ) {
+//      List<SqlNode> columnInfo = regularColumn.getOperandList();
+//      String jsonPathSpec = buildJsonPathSpec(((SqlIdentifier)columnInfo.get(0)).getSimple());
+//      if (columnInfo.size() > 2) {
+//        if (columnInfo.get(3) instanceof SqlIdentifier) {
+//          jsonPathSpec = ((SqlIdentifier) columnInfo.get(3)).getSimple();
+//        }
+//      }
+
+
+
+      return null;
+    }
+
   }
 
   public static String jsonObject(SqlJsonConstructorNullClause nullClause,

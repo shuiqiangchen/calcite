@@ -2411,7 +2411,22 @@ public class SqlToRelConverter {
     case UNNEST:
       convertUnnest(bb, (SqlCall) from, fieldNames);
       return;
-
+    case JSON_TABLE:
+      RexNode expr = exprConverter.convertCall(bb, (SqlCall) from);
+      final List<RelNode> inputs = bb.retrieveCursors();
+      Type elementType = null;
+      LogicalTableFunctionScan callRel =
+          LogicalTableFunctionScan.create(
+              cluster,
+              inputs,
+              expr,
+              null,
+              validator.getValidatedNodeType(from),
+              null
+              );
+      bb.setRoot(callRel, true);
+//      bb.setRoot(expr, true);
+      return;
     case COLLECTION_TABLE:
       call = (SqlCall) from;
 
@@ -2741,7 +2756,6 @@ public class SqlToRelConverter {
     relBuilder.unpivot(unpivot.includeNulls, measureNames, axisNames,
         axisMap.build());
     relBuilder.convert(getNamespace(unpivot).getRowType(), false);
-
     bb.setRoot(relBuilder.build(), true);
   }
 

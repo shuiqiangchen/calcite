@@ -3936,6 +3936,24 @@ LogicalProject(EXPR$0=[JSON_QUERY($1, 'lax $', FLAG(WITHOUT_ARRAY), FLAG(SqlJson
 ]]>
     </Resource>
   </TestCase>
+  <TestCase name="testJsonTable">
+    <Resource name="sql">
+      <![CDATA[select EMPNO, jt.name, jt.title FROM emp, JSON_TABLE(emp.EMPNO, 'lax $'
+COLUMNS(name VARCHAR(30) PATH 'lax $.Name', NESTED PATH 'lax $.books[*]' AS BOOKS
+COLUMNS (title VARCHAR(60) PATH 'lax $.title', NESTED PATH 'lax $.authorList[*]' AS ATH
+COLUMNS (author VARCHAR(30) PATH 'lax $', NESTED PATH 'lax $.category[*]' AS CAT COLUMNS
+ (category VARCHAR(30) PATH 'lax $')))) PLAN (PERSON INNER (BOOKS INNER (ATH CROSS CAT
+ CROSS (ATA INNER BBB))))) AS jt]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalProject(EMPNO=[$0], NAME=[$9], TITLE=[$10])
+  LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{0}])
+    LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+    LogicalTableFunctionScan(invocation=[JSON_TABLE($cor0.EMPNO, 'lax $', COLUMN_DECL(COLUMN_DECL('NAME', 'strict $.NAME', FLAG(NULL), FLAG(NULL)), COLUMN_DECL('lax $.books[*]', 'BOOKS', COLUMN_DECL(COLUMN_DECL('TITLE', 'strict $.TITLE', FLAG(NULL), FLAG(NULL)), COLUMN_DECL('lax $.authorList[*]', 'ATH', COLUMN_DECL(COLUMN_DECL('AUTHOR', 'strict $.AUTHOR', FLAG(NULL), FLAG(NULL)), COLUMN_DECL('lax $.category[*]', 'CAT', COLUMN_DECL(COLUMN_DECL('CATEGORY', 'strict $.CATEGORY', FLAG(NULL), FLAG(NULL))))))))), JSON_TABLE_PLAN(JSON_TABLE_PLAN(FLAG(INNER), 'PERSON', JSON_TABLE_PLAN(JSON_TABLE_PLAN(FLAG(INNER), 'BOOKS', JSON_TABLE_PLAN(JSON_TABLE_PLAN(FLAG(CROSS), JSON_TABLE_PLAN('ATH'), JSON_TABLE_PLAN('CAT'), JSON_TABLE_PLAN(JSON_TABLE_PLAN(FLAG(INNER), 'ATA', JSON_TABLE_PLAN('BBB'))))))))), FLAG(EMPTY))], rowType=[RecordType(VARCHAR(30) NAME, VARCHAR(60) TITLE, VARCHAR(30) AUTHOR, VARCHAR(30) CATEGORY)])
+]]>
+    </Resource>
+  </TestCase>
   <TestCase name="testJsonType">
     <Resource name="sql">
       <![CDATA[select json_type(ename)

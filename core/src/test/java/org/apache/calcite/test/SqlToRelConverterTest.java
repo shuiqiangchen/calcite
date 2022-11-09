@@ -4076,6 +4076,19 @@ class SqlToRelConverterTest extends SqlToRelTestBase {
     sql(sql).ok();
   }
 
+  @Test void testJsonTable() {
+    final String sql = "select EMPNO, jt.name, jt.title FROM emp, JSON_TABLE(emp.EMPNO, 'lax $'" +
+        "\n" +
+        "COLUMNS(name VARCHAR(30) PATH 'lax $.Name', NESTED PATH 'lax $.books[*]' AS BOOKS\n" +
+        "COLUMNS (title VARCHAR(60) PATH 'lax $.title', NESTED PATH 'lax $.authorList[*]' AS " +
+        "ATH\n" +
+        "COLUMNS (author VARCHAR(30) PATH 'lax $', NESTED PATH 'lax $.category[*]' AS " +
+        "CAT COLUMNS\n" +
+        " (category VARCHAR(30) PATH 'lax $')))) PLAN (PERSON INNER (BOOKS INNER (ATH CROSS CAT\n" +
+        " CROSS (ATA INNER BBB))))) AS jt";
+    System.out.println(sql);
+    sql(sql).ok();
+  }
   @Test void testJsonQuery() {
     final String sql = "select json_query(ename, 'lax $')\n"
         + "from emp";

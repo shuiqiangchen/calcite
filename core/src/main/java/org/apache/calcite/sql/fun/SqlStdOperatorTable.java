@@ -1397,6 +1397,8 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
 
   public static final SqlFunction JSON_QUERY = new SqlJsonQueryFunction();
 
+  public static final SqlFunction JSON_TABLE = new SqlJsonTableFunction();
+
   public static final SqlFunction JSON_OBJECT = new SqlJsonObjectFunction();
 
   public static final SqlJsonObjectAggAggFunction JSON_OBJECTAGG =

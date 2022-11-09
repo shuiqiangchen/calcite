@@ -5694,7 +5694,7 @@ class RelToSqlConverterTest {
   }
 
   @Test void testJsonValue() {
-    String query = "select json_value(\"product_name\", 'lax $') from \"product\"";
+    String query = "select json_value(\"product_name\", 'lax $' ERROR ON EMPTY) from \"product\"";
     final String expected = "SELECT JSON_VALUE(\"product_name\", 'lax $')\n"
         + "FROM \"foodmart\".\"product\"";
     sql(query).ok(expected);

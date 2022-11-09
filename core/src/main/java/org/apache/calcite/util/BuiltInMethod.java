@@ -107,11 +107,7 @@ import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.schema.Schemas;
 import org.apache.calcite.schema.Table;
-import org.apache.calcite.sql.SqlExplainLevel;
-import org.apache.calcite.sql.SqlJsonConstructorNullClause;
-import org.apache.calcite.sql.SqlJsonQueryEmptyOrErrorBehavior;
-import org.apache.calcite.sql.SqlJsonQueryWrapperBehavior;
-import org.apache.calcite.sql.SqlJsonValueEmptyOrErrorBehavior;
+import org.apache.calcite.sql.*;
 
 import com.google.common.collect.ImmutableMap;
 
@@ -369,6 +365,8 @@ public enum BuiltInMethod {
   JSON_VALUE(JsonFunctions.class, "jsonValue", String.class, String.class,
       SqlJsonValueEmptyOrErrorBehavior.class, Object.class,
       SqlJsonValueEmptyOrErrorBehavior.class, Object.class),
+  JSON_TABLE(JsonFunctions.class, "jsonTable", String.class, String.class, Object.class,
+      Object.class, SqlJsonTableErrorBehavior.class),
   JSON_QUERY(JsonFunctions.class, "jsonQuery", String.class,
       String.class,
       SqlJsonQueryWrapperBehavior.class,

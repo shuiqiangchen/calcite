@@ -31,32 +31,13 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexRangeRef;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.runtime.SqlFunctions;
-import org.apache.calcite.sql.SqlAggFunction;
-import org.apache.calcite.sql.SqlBasicCall;
-import org.apache.calcite.sql.SqlBinaryOperator;
-import org.apache.calcite.sql.SqlCall;
-import org.apache.calcite.sql.SqlDataTypeSpec;
-import org.apache.calcite.sql.SqlFunction;
-import org.apache.calcite.sql.SqlFunctionCategory;
-import org.apache.calcite.sql.SqlIdentifier;
-import org.apache.calcite.sql.SqlIntervalLiteral;
-import org.apache.calcite.sql.SqlIntervalQualifier;
-import org.apache.calcite.sql.SqlJdbcFunctionCall;
-import org.apache.calcite.sql.SqlKind;
-import org.apache.calcite.sql.SqlLiteral;
-import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.SqlNodeList;
-import org.apache.calcite.sql.SqlNumericLiteral;
-import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.SqlOperatorBinding;
-import org.apache.calcite.sql.SqlTableFunction;
-import org.apache.calcite.sql.SqlUtil;
-import org.apache.calcite.sql.SqlWindowTableFunction;
+import org.apache.calcite.sql.*;
 import org.apache.calcite.sql.fun.SqlArrayValueConstructor;
 import org.apache.calcite.sql.fun.SqlBetweenOperator;
 import org.apache.calcite.sql.fun.SqlCase;
 import org.apache.calcite.sql.fun.SqlDatetimeSubtractionOperator;
 import org.apache.calcite.sql.fun.SqlExtractFunction;
+import org.apache.calcite.sql.fun.SqlJsonTableFunction;
 import org.apache.calcite.sql.fun.SqlJsonValueFunction;
 import org.apache.calcite.sql.fun.SqlLibrary;
 import org.apache.calcite.sql.fun.SqlLibraryOperators;
@@ -775,6 +756,69 @@ public class StandardConvertletTable extends ReflectiveConvertletTable {
         cx.getValidator().getValidatedNodeTypeIfKnown(call);
     requireNonNull(returnType, () -> "Unable to get type of " + call);
     return cx.getRexBuilder().makeCall(returnType, fun, exprs);
+  }
+
+  public RexNode convertJsonTableFunction(
+      SqlRexContext ctx,
+      SqlJsonTableFunction func,
+      SqlCall call) {
+    List<SqlNode> operands = call.getOperandList();
+    final List<RexNode> exprs = new ArrayList<>();
+    exprs.add(ctx.convertExpression(operands.get(0)));
+    exprs.add(ctx.convertExpression(operands.get(1)));
+    // convert columns
+    exprs.add(convertJsonTableColumn(ctx, (SqlJsonTableColumn) operands.get(2)));
+    // convert plan
+    exprs.add(convertJsonTablePlan(ctx, (SqlJsonTablePlanBase) operands.get(3)));
+    // convert error behavior
+    exprs.add(ctx.convertExpression(operands.get(4)));
+
+    RelDataType returnType =
+    ctx.getValidator().getValidatedNodeTypeIfKnown(call);
+    requireNonNull(returnType, () -> "Unable to get type of " + call);
+    return ctx.getRexBuilder().makeCall(returnType, func, exprs);
+  }
+
+  private RexNode convertJsonTableColumn(
+      SqlRexContext ctx,
+      SqlJsonTableColumn column
+      ) {
+    List<RexNode> exprs = new ArrayList<>();
+    RelDataTypeFactory.Builder builder = ctx.getTypeFactory().builder();
+    column.resolveFields(ctx.getTypeFactory(), ctx.getValidator()).forEach(builder::add);
+    RelDataType returnType = builder.build();
+
+    for (SqlNode columnInfo : column.getOperandList()) {
+       if (columnInfo instanceof SqlIdentifier) {
+         exprs.add(ctx.getRexBuilder().makeLiteral(((SqlIdentifier) columnInfo).getSimple()));
+       } else if (columnInfo instanceof SqlJsonTableColumn){
+         exprs.add(convertJsonTableColumn(ctx, (SqlJsonTableColumn) columnInfo));
+       } else if (columnInfo instanceof SqlDataTypeSpec)  {
+         // ignore the typespec field
+       } else {
+         exprs.add(ctx.convertExpression(columnInfo));
+       }
+    }
+    return ctx.getRexBuilder().makeCall(returnType, column.getOperator(), exprs);
+  }
+
+  private RexNode convertJsonTablePlan(
+      SqlRexContext ctx,
+      SqlJsonTablePlanBase jsonTablePlan
+  ) {
+    List<RexNode> expr = new ArrayList<>();
+    for (SqlNode planInfo : jsonTablePlan.getOperandList()) {
+      if (planInfo instanceof SqlIdentifier) {
+        expr.add(ctx.getRexBuilder().makeLiteral(((SqlIdentifier) planInfo).getSimple()));
+      } else if (planInfo instanceof SqlJsonTablePlanBase) {
+        expr.add(convertJsonTablePlan(ctx, (SqlJsonTablePlanBase) planInfo));
+      } else {
+        expr.add(ctx.convertExpression(planInfo));
+      }
+    }
+
+    return ctx.getRexBuilder().makeCall(ctx.getTypeFactory().createUnknownType(),
+        jsonTablePlan.getOperator(), expr);
   }
 
   public RexNode convertSequenceValue(

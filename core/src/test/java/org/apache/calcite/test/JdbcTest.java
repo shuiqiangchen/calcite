@@ -81,6 +81,7 @@ import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.parser.impl.SqlParserImpl;
 import org.apache.calcite.sql2rel.SqlToRelConverter.Config;
+import org.apache.calcite.test.schemata.bookclub.BookClubSchema;
 import org.apache.calcite.test.schemata.catchall.CatchallSchema;
 import org.apache.calcite.test.schemata.foodmart.FoodmartSchema;
 import org.apache.calcite.test.schemata.hr.Department;
@@ -211,6 +212,25 @@ public class JdbcTest {
       + "  defaultSchema: 'hr',\n"
       + "   schemas: [\n"
       + HR_SCHEMA
+      + "   ]\n"
+      + "}";
+
+  public static final String BOOK_CLUB_SCHEMA = "     {\n"
+      + "       type: 'custom',\n"
+      + "       name: 'bookclub',\n"
+      + "       factory: '"
+      + ReflectiveSchema.Factory.class.getName()
+      + "',\n"
+      + "       operand: {\n"
+      + "         class: '" + BookClubSchema.class.getName() + "'\n"
+      + "       }\n"
+      + "     }\n";
+
+  public static final String BOOK_CLUB_MODEL = "{\n"
+      + "  version: '1.0',\n"
+      + "  defaultSchema: 'bookclub',\n"
+      + "   schemas: [\n"
+      + BOOK_CLUB_SCHEMA
       + "   ]\n"
       + "}";
 
@@ -7812,6 +7832,21 @@ public class JdbcTest {
             + "FROM (VALUES ('{\"a\": [10, true],\"b\": \"[10, true]\"}')) AS t(v)\n"
             + "limit 10")
         .returns("C1=OBJECT; C2=ARRAY; C3=INTEGER; C4=BOOLEAN\n");
+  }
+
+  @Test void testJsonTable() throws SQLException {
+//    final Driver driver = new Driver();
+//    CalciteConnection calciteConnection = (CalciteConnection) driver.connect("jdbc:calcite:", new Properties());
+//    SchemaPlus rootSchema = calciteConnection.getRootSchema();
+//    rootSchema.add("bookclub", new ReflectiveSchema(new BookClubSchema()));
+//    calciteConnection.setSchema("bookclub");
+
+    String sql = "SELECT jt.rowseq, jt.name, jt.zip FROM members, JSON_TABLE (members.jcol, " +
+        "\"lax $\" COLUMNS ( rowSeq FOR ORDINALITY, name VARCHAR(30) PATH 'lax $.Name', zip CHAR(5) " +
+        "PATH 'lax$.address.postalCode')) AS jt";
+    CalciteAssert.that(CalciteAssert.Config.BOOK_CLUB)
+        .query(sql)
+        .returns("null");
   }
 
   @Test void testJsonDepth() {

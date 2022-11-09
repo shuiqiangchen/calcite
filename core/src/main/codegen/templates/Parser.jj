@@ -69,6 +69,13 @@ import org.apache.calcite.sql.SqlJsonExistsErrorBehavior;
 import org.apache.calcite.sql.SqlJsonEmptyOrError;
 import org.apache.calcite.sql.SqlJsonQueryEmptyOrErrorBehavior;
 import org.apache.calcite.sql.SqlJsonQueryWrapperBehavior;
+import org.apache.calcite.sql.SqlJsonTableColumn;
+import org.apache.calcite.sql.SqlJsonTableColumnEmptyOrErrorBehavior;
+import org.apache.calcite.sql.SqlJsonTableErrorBehavior;
+import org.apache.calcite.sql.SqlJsonTableFormattedColumnEmptyOrErrorBehavior;
+import org.apache.calcite.sql.SqlJsonTableFormattedColumnWrapperBehavior;
+import org.apache.calcite.sql.SqlJsonTablePlanBase;
+import org.apache.calcite.sql.SqlJsonTablePlanSemantics;
 import org.apache.calcite.sql.SqlJsonValueEmptyOrErrorBehavior;
 import org.apache.calcite.sql.SqlJsonValueReturning;
 import org.apache.calcite.sql.SqlKind;
@@ -2193,6 +2200,8 @@ SqlNode TableRef3(ExprContext exprContext, boolean lateral) :
         [ <LATERAL> { lateral = true; } ]
         tableRef = TableFunctionCall()
         tableRef = addLateral(tableRef, lateral)
+    |
+        tableRef = JsonTableFunctionCall()
     |
         tableRef = ExtendedTableRef()
     )
@@ -6263,6 +6272,553 @@ SqlCall JsonValueFunctionCall() :
     }
 }
 
+SqlNode JsonTableDefaultPlanInnerOuter() :
+{
+}
+{
+    (
+        <INNER> {
+            return SqlJsonTablePlanSemantics.INNER.symbol(getPos());
+        }
+    |
+        <OUTER> {
+            return SqlJsonTablePlanSemantics.OUTER.symbol(getPos());
+        }
+    )
+}
+
+SqlNode JsonTableDefaultPlanUnionCross() :
+{
+}
+{
+    (
+        <CROSS> {
+            return SqlJsonTablePlanSemantics.CROSS.symbol(getPos());
+        }
+    |
+        <UNION> {
+            return SqlJsonTablePlanSemantics.UNION.symbol(getPos());
+        }
+    )
+}
+
+SqlNode JsonTableFunctionDefaultPlan() :
+{
+    final List<SqlNode> choices = new ArrayList<SqlNode>();
+    final Span span;
+    SqlNode node;
+}
+{
+    <PLAN> {
+       span = span();
+    }
+    <DEFAULT_>
+    <LPAREN>
+    (
+        node = JsonTableDefaultPlanInnerOuter() {
+            choices.add(node);
+        }
+        [
+            <COMMA>
+            node = JsonTableDefaultPlanUnionCross() {
+                choices.add(node);
+            }
+        ]
+    |
+        node = JsonTableDefaultPlanUnionCross() {
+            choices.add(node);
+        }
+        [
+            <COMMA>
+            node = JsonTableDefaultPlanInnerOuter() {
+                choices.add(node);
+            }
+        ]
+    )
+    <RPAREN>
+    {
+        return new SqlJsonTablePlanBase.SqlJsonTableDefaultPlan(choices, span.end(this));
+    }
+}
+
+SqlNode JsonTablePlanParentChild() :
+{
+    List<SqlNode> plans = new ArrayList<SqlNode>();
+    SqlNode planSemantic;
+    SqlNode tablePathName;
+    SqlNode tablePlanPrimary;
+}
+{
+    tablePathName = CompoundIdentifier()
+    (
+        <INNER> {
+            planSemantic = SqlJsonTablePlanSemantics.INNER.symbol(getPos());
+        }
+    |
+        <OUTER> {
+            planSemantic = SqlJsonTablePlanSemantics.OUTER.symbol(getPos());
+        }
+    )
+    tablePlanPrimary = JsonTablePlanPrimary()
+    {
+        plans.add(planSemantic);
+        plans.add(tablePathName);
+        plans.add(tablePlanPrimary);
+        return new SqlJsonTablePlanBase.SqlJsonTablePlanParentChild(plans, Span.of(plans).pos());
+    }
+}
+
+SqlNode JsonTablePlanSibling() :
+{
+    List<SqlNode> plans = new ArrayList<SqlNode>();
+    SqlNode planSemantic;
+    SqlNode planPrimary;
+}
+{
+    (
+        planPrimary = JsonTablePlanPrimary()
+        (
+            <UNION> {
+                planSemantic = SqlJsonTablePlanSemantics.UNION.symbol(getPos());
+                plans.add(planSemantic);
+                plans.add(planPrimary);
+            }
+            (
+                planPrimary = JsonTablePlanPrimary() {
+                    plans.add(planPrimary);
+                }
+            )
+            (
+                <UNION>
+                planPrimary = JsonTablePlanPrimary() {
+                    plans.add(planPrimary);
+                }
+            )*
+
+        |
+            <CROSS> {
+                planSemantic = SqlJsonTablePlanSemantics.CROSS.symbol(getPos());
+                plans.add(planSemantic);
+                plans.add(planPrimary);
+            }
+            (
+                planPrimary = JsonTablePlanPrimary() {
+                    plans.add(planPrimary);
+                }
+            )
+            (
+                <CROSS>
+                planPrimary = JsonTablePlanPrimary() {
+                    plans.add(planPrimary);
+                }
+            )*
+        )
+    )
+    {
+        return new SqlJsonTablePlanBase.SqlJsonTablePlanSibling(plans, Span.of(plans).pos());
+    }
+}
+
+SqlNode JsonTablePlan() :
+{
+    SqlNode node;
+}
+{
+    (
+        LOOKAHEAD(3)
+        node = JsonTablePlanParentChild() {
+            return node;
+        }
+    |
+        LOOKAHEAD(3)
+        node = JsonTablePlanSibling() {
+            return node;
+        }
+    |
+        node = CompoundIdentifier() {
+            return new SqlJsonTablePlanBase.SqlJsonTablePlan(node, Span.of(node).pos());
+        }
+    )
+}
+
+SqlNode JsonTablePlanPrimary() :
+{
+//    List<SqlNode> plans = new ArrayList<SqlNode>();
+    SqlNode node;
+    final Span span;
+}
+{
+    (
+        node = CompoundIdentifier()
+//        {
+////           plans.add(node);
+//
+//        }
+    |
+        <LPAREN>
+        (
+            node = JsonTablePlan()
+//            {
+////                plans.add(node);
+//                return node;
+//            }
+        )
+        <RPAREN>
+    )
+    {
+        return new SqlJsonTablePlanBase.SqlJsonTablePlanPrimary(node, Span.of(node).pos());
+    }
+}
+
+SqlNode JsonTableFunctionSpecificPlan() :
+{
+    final Span span;
+    SqlNode node;
+}
+{
+    <PLAN> {
+       span = span();
+   }
+   <LPAREN>
+    (
+        node = JsonTablePlan()
+    )
+    <RPAREN> {
+        return new SqlJsonTablePlanBase.SqlJsonTableSpecificPlan(node, Span.of(node).pos());
+    }
+}
+
+SqlNode JsonTableOrdinalityColumn() :
+{
+    SqlIdentifier columnName;
+}
+{
+    columnName = CompoundIdentifier()
+    <FOR> <ORDINALITY>
+    {
+        return new SqlJsonTableColumn.SqlJsonTableOrdinalityColumn(getPos(), columnName);
+    }
+}
+
+List<SqlNode> JsonTableColumnEmptyOrErrorBehavior() :
+{
+    final List<SqlNode> list = new ArrayList<SqlNode>();
+}
+{
+    (
+        <ERROR> {
+            list.add(SqlJsonTableColumnEmptyOrErrorBehavior.ERROR.symbol(getPos()));
+        }
+    |
+        <NULL> {
+            list.add(SqlJsonTableColumnEmptyOrErrorBehavior.NULL.symbol(getPos()));
+        }
+    |
+        <DEFAULT_> {
+            list.add(SqlJsonTableColumnEmptyOrErrorBehavior.DEFAULT.symbol(getPos()));
+        }
+        AddExpression(list, ExprContext.ACCEPT_NON_QUERY)
+    )
+    <ON>
+    (
+        <EMPTY> {
+            list.add(SqlJsonEmptyOrError.EMPTY.symbol(getPos()));
+        }
+    |
+        <ERROR> {
+            list.add(SqlJsonEmptyOrError.ERROR.symbol(getPos()));
+        }
+    )
+    { return list;}
+}
+
+SqlNode JsonTableRegularColumn() :
+{
+    final List<SqlNode> columnInfo = new ArrayList<SqlNode>();
+    SqlNode columnName;
+    SqlNode dataType;
+    SqlNode jsonPath;
+    List<SqlNode> errorOrEmptyBehavior;
+    Span span = Span.of();
+}
+{
+    columnName = CompoundIdentifier() {
+        columnInfo.add(columnName);
+    }
+    dataType = DataType() {
+
+        columnInfo.add(dataType);
+    }
+    [
+        <PATH>
+        jsonPath = JsonPathSpec() {
+            columnInfo.add(jsonPath);
+        }
+    ]
+    (
+       errorOrEmptyBehavior = JsonTableColumnEmptyOrErrorBehavior() {
+            columnInfo.addAll(errorOrEmptyBehavior);
+       }
+    )*
+    {
+//        return new SqlNodeList(columnInfo, span.end(this));
+        return new SqlJsonTableColumn.SqlJsonTableRegularColumn(span.end(this), columnInfo);
+    }
+}
+
+List<SqlNode> JsonTableFormattedColumnErrorOrEmptyBehavior() :
+{
+    final List<SqlNode> list = new ArrayList<SqlNode>();
+}
+{
+    (
+        <ERROR> {
+            list.add(SqlJsonTableFormattedColumnEmptyOrErrorBehavior.ERROR.symbol(getPos()));
+//            return SqlJsonTableFormattedColumnEmptyOrErrorBehavior.ERROR.symbol(getPos());
+        }
+    |
+        <NULL> {
+            list.add(SqlJsonTableFormattedColumnEmptyOrErrorBehavior.NULL.symbol(getPos()));
+//            return SqlJsonTableFormattedColumnEmptyOrErrorBehavior.NULL.symbol(getPos());
+        }
+    |
+        LOOKAHEAD(2)
+        <EMPTY> <ARRAY> {
+            list.add(SqlJsonTableFormattedColumnEmptyOrErrorBehavior.EMPTY_ARRAY.symbol(getPos()));
+//            return SqlJsonTableFormattedColumnEmptyOrErrorBehavior.EMPTY_ARRAY.symbol(getPos());
+        }
+    |
+        <EMPTY> <OBJECT> {
+            list.add(SqlJsonTableFormattedColumnEmptyOrErrorBehavior.EMPTY_OBJECT.symbol(getPos()));
+//            return SqlJsonTableFormattedColumnEmptyOrErrorBehavior.EMPTY_OBJECT.symbol(getPos());
+        }
+    )
+    <ON>
+    (
+        <EMPTY> {
+            list.add(SqlJsonEmptyOrError.EMPTY.symbol(getPos()));
+        }
+    |
+        <ERROR> {
+            list.add(SqlJsonEmptyOrError.ERROR.symbol(getPos()));
+        }
+    )
+    { return list; }
+}
+
+SqlNode JsonTableFormattedColumnWrapperBehavior() :
+{
+}
+{
+    <WITHOUT> [<ARRAY>] {
+        return SqlJsonTableFormattedColumnWrapperBehavior.WITHOUT_ARRAY.symbol(getPos());
+    }
+|
+    LOOKAHEAD(2)
+    <WITH> <CONDITIONAL> <ARRAY> {
+        return SqlJsonTableFormattedColumnWrapperBehavior.WITH_CONDITIONAL_ARRAY.symbol(getPos());
+    }
+|
+    <WITH> [<UNCONDITIONAL>] [<ARRAY>] {
+       return SqlJsonTableFormattedColumnWrapperBehavior.WITH_UNCONDITIONAL_ARRAY.symbol(getPos());
+    }
+}
+
+//SqlNode JsonTableFormattedColumnQuotesBehavior() :
+//{
+//}
+//{
+//    <KEEP> {
+//        return SqlJsonTableFormattedColumnQuotesBehavior.KEEP.symbol(getPos());
+//    }
+//|
+//    <OMIT> {
+//        return SqlJsonTableFormattedColumnQuotesBehavior.OMIT.symbol(getPos());
+//    }
+//}
+
+SqlNode JsonTableFormattedColumn() :
+{
+//    final SqlNode[] columnInfo = new SqlNode[8];
+    final List<SqlNode> columnInfo = new ArrayList<SqlNode>();
+    SqlNode node;
+    List<SqlNode> behavior;
+    Span span = Span.of();
+}
+{
+    node = CompoundIdentifier() {
+        columnInfo.add(node);
+    }
+    node = DataType() {
+        columnInfo.add(node);
+    }
+    <FORMAT> JsonRepresentation()
+    [
+        <PATH>
+        node = JsonPathSpec() {
+            columnInfo.add(node);
+        }
+    ]
+    [
+        node = JsonTableFormattedColumnWrapperBehavior() {
+            columnInfo.add(node);
+        }
+        <WRAPPER>
+    ]
+//    [
+//        node = JsonTableFormattedColumnQuotesBehavior() {
+//            columnInfo.add(node);
+//        }
+//        <QUOTES>
+//        [<ON> <SCALAR> <STRING>]
+//    ]
+    (
+        behavior = JsonTableFormattedColumnErrorOrEmptyBehavior() {
+            columnInfo.addAll(behavior);
+        }
+    )*
+    {
+//        return new SqlNodeList(columnInfo, span.end(this));
+        return new SqlJsonTableColumn.SqlJsonTableFormattedColumn(span.end(this), columnInfo);
+    }
+}
+
+SqlNode JsonTableNestedColumns() :
+{
+    final List<SqlNode> columnInfo = new ArrayList<SqlNode>();
+    SqlNode node;
+    Span span = Span.of();
+}
+{
+    <NESTED> [<PATH>]
+    node = JsonPathSpec() {
+        columnInfo.add(node);
+    }
+    [
+        <AS>
+        node = SimpleIdentifier() {
+            columnInfo.add(node);
+        }
+    ]
+    node = JsonTableColumns() {
+        columnInfo.add(node);
+    }
+    {
+//        return new SqlNodeList(columnInfo, span.end(this));
+          return new SqlJsonTableColumn.SqlJsonTableNestedColumn(span.end(this), columnInfo);
+    }
+}
+
+void JsonTableColumnDefinition(List<SqlNode> list) :
+{
+    SqlNode column;
+}
+{
+    LOOKAHEAD(3)
+    column = JsonTableOrdinalityColumn() {
+        list.add(column);
+    }
+|
+    column = JsonTableNestedColumns() {
+        list.add(column);
+    }
+|
+    LOOKAHEAD(3)
+    column = JsonTableRegularColumn() {
+        list.add(column);
+    }
+|
+    LOOKAHEAD(3)
+    column = JsonTableFormattedColumn() {
+        list.add(column);
+    }
+}
+SqlNode JsonTableColumns() :
+{
+    final Span s;
+    List<SqlNode> list = new ArrayList<SqlNode>();
+    SqlNode column;
+}
+{
+    <COLUMNS> { s = span(); }
+    <LPAREN>
+    (
+        JsonTableColumnDefinition(list)
+    )
+    (
+        <COMMA>
+        JsonTableColumnDefinition(list)
+    )*
+    <RPAREN> {
+        return new SqlJsonTableColumn.SqlJsonTableColumnClause(s.end(this), list);
+    }
+}
+
+SqlNode JsonTableErrorBehavior() :
+{
+}
+{
+    (
+        <ERROR> {
+            return SqlJsonTableErrorBehavior.ERROR.symbol(getPos());
+        }
+    |
+        <EMPTY> {
+            return SqlJsonTableErrorBehavior.EMPTY.symbol(getPos());
+        }
+    )
+}
+
+SqlCall JsonTableFunctionCall() :
+{
+//    final List<SqlNode> args = new ArrayList<SqlNode>();
+    SqlNode[] args = new SqlNode[5];
+    SqlNode e;
+    List<SqlNode> commonSyntax;
+    final Span span;
+    SqlNode columns;
+    SqlNode plan;
+    SqlNode errorBehavior;
+}
+{
+    <JSON_TABLE> { span = span(); }
+    <LPAREN> commonSyntax = JsonApiCommonSyntax() {
+//        args.addAll(commonSyntax);
+        args[0] = commonSyntax.get(0);
+        args[1] = commonSyntax.get(1);
+    }
+    (
+        columns = JsonTableColumns() {
+//            args.add(colums);
+             args[2] = columns;
+        }
+    )
+    [
+    (
+        LOOKAHEAD(2)
+        plan = JsonTableFunctionSpecificPlan() {
+//            args.add(plan);
+            args[3] = plan;
+        }
+    |
+        plan = JsonTableFunctionDefaultPlan() {
+//          args.add(plan);
+            args[3] = plan;
+      }
+     )
+    ]
+    [
+        errorBehavior = JsonTableErrorBehavior() {
+//            args.add(errorBehavior);
+            args[4] = errorBehavior;
+        }
+        <ON> <ERROR>
+    ]
+    <RPAREN> {
+        return SqlStdOperatorTable.JSON_TABLE.createCall(null, span.end(this), args);
+    }
+}
+
 List<SqlNode> JsonQueryEmptyOrErrorBehavior() :
 {
     final List<SqlNode> list = new ArrayList<SqlNode>();
@@ -7470,6 +8026,7 @@ SqlPostfixOperator PostfixRowOperator() :
 |   < COLLATION_SCHEMA: "COLLATION_SCHEMA" >
 |   < COLLECT: "COLLECT" >
 |   < COLUMN: "COLUMN" >
+|   < COLUMNS: "COLUMNS" >
 |   < COLUMN_NAME: "COLUMN_NAME" >
 |   < COMMAND_FUNCTION: "COMMAND_FUNCTION" >
 |   < COMMAND_FUNCTION_CODE: "COMMAND_FUNCTION_CODE" >
@@ -7666,8 +8223,10 @@ SqlPostfixOperator PostfixRowOperator() :
 |   < JSON_OBJECT: "JSON_OBJECT">
 |   < JSON_OBJECTAGG: "JSON_OBJECTAGG">
 |   < JSON_QUERY: "JSON_QUERY" >
+|   < JSON_TABLE: "JSON_TABLE" >
 |   < JSON_VALUE: "JSON_VALUE" >
 |   < K: "K" >
+|   < KEEP: "KEEP" >
 |   < KEY: "KEY" >
 |   < KEY_MEMBER: "KEY_MEMBER" >
 |   < KEY_TYPE: "KEY_TYPE" >
@@ -7731,6 +8290,7 @@ SqlPostfixOperator PostfixRowOperator() :
 |   < NATURAL: "NATURAL" >
 |   < NCHAR: "NCHAR" >
 |   < NCLOB: "NCLOB" >
+|   < NESTED: "NESTED" >
 |   < NESTING: "NESTING" >
 |   < NEW: "NEW" >
 |   < NEXT: "NEXT" >
@@ -7815,6 +8375,7 @@ SqlPostfixOperator PostfixRowOperator() :
 |   < PRIVILEGES: "PRIVILEGES" >
 |   < PROCEDURE: "PROCEDURE" >
 |   < PUBLIC: "PUBLIC" >
+|   < QUOTES: "QUOTES" >
 |   < QUARTER: "QUARTER" >
 |   < RANGE: "RANGE" >
 |   < RANK: "RANK" >
@@ -7967,6 +8528,7 @@ SqlPostfixOperator PostfixRowOperator() :
 |   < STDDEV_POP: "STDDEV_POP" >
 |   < STDDEV_SAMP: "STDDEV_SAMP" >
 |   < STREAM: "STREAM" >
+|   < STRING: "STRING" >
 |   < STRING_AGG: "STRING_AGG" >
 |   < STRUCTURE: "STRUCTURE" >
 |   < STYLE: "STYLE" >

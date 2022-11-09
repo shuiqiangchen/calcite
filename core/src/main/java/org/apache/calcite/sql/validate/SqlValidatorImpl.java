@@ -2467,7 +2467,6 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
         return enclosingNode;
       }
       return newNode;
-
     case LATERAL:
       return registerFrom(
           parentScope,
@@ -2512,7 +2511,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
       // of the JOIN tree.
       scopes.put(node, usingScope);
       return newNode;
-
+    case JSON_TABLE:
     case UNNEST:
       if (!lateral) {
         return registerFrom(parentScope, usingScope, register, node,
@@ -2970,6 +2969,19 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
           alias,
           unnestNs,
           forceNullable);
+      registerOperandSubQueries(parentScope, call, 0);
+      scopes.put(node, parentScope);
+      break;
+    case JSON_TABLE:
+      call = (SqlCall) node;
+      final JsonTableNamespace jsonTableNs =
+          new JsonTableNamespace(this, call, parentScope, enclosingNode);
+      registerNamespace(
+          usingScope,
+          alias,
+          jsonTableNs,
+          forceNullable
+      );
       registerOperandSubQueries(parentScope, call, 0);
       scopes.put(node, parentScope);
       break;

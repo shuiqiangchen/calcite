@@ -64,6 +64,7 @@ import org.apache.calcite.sql.fun.SqlSpatialTypeFunctions;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
 import org.apache.calcite.sql.validate.SqlValidatorException;
+import org.apache.calcite.test.schemata.bookclub.BookClubSchema;
 import org.apache.calcite.test.schemata.bookstore.BookstoreSchema;
 import org.apache.calcite.test.schemata.countries.CountriesTableFunction;
 import org.apache.calcite.test.schemata.countries.StatesTableFunction;
@@ -1005,6 +1006,9 @@ public class CalciteAssert {
     case BOOKSTORE:
       return rootSchema.add(schema.schemaName,
           new ReflectiveSchema(new BookstoreSchema()));
+    case BOOKCLUB:
+      return rootSchema.add(schema.schemaName,
+          new ReflectiveSchema(new BookClubSchema()));
     default:
       throw new AssertionError("unknown schema " + schema);
     }
@@ -1096,6 +1100,8 @@ public class CalciteAssert {
         return with(CalciteConnectionProperty.SPARK, true);
       case AUX:
         return with(SchemaSpec.AUX, SchemaSpec.POST);
+      case BOOK_CLUB:
+        return with(SchemaSpec.BOOKCLUB);
       default:
         throw Util.unexpected(config);
       }
@@ -1839,7 +1845,9 @@ public class CalciteAssert {
 
     /** Configuration that loads AUX schema for tests involving view expansions
      * and lateral joins tests. */
-    AUX
+    AUX,
+
+    BOOK_CLUB
   }
 
   /** Implementation of {@link AssertQuery} that does nothing. */
@@ -1952,7 +1960,8 @@ public class CalciteAssert {
     POST("POST"),
     ORINOCO("ORINOCO"),
     AUX("AUX"),
-    BOOKSTORE("bookstore");
+    BOOKSTORE("bookstore"),
+    BOOKCLUB("bookclub");
 
     /** The name of the schema that is usually created from this specification.
      * (Names are not unique, and you can use another name if you wish.) */
