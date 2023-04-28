@@ -18,11 +18,7 @@ package org.apache.calcite.adapter.enumerable;
 
 import org.apache.calcite.adapter.java.JavaTypeFactory;
 import org.apache.calcite.avatica.util.DateTimeUtils;
-import org.apache.calcite.linq4j.AbstractEnumerable;
-import org.apache.calcite.linq4j.Enumerable;
-import org.apache.calcite.linq4j.Enumerator;
-import org.apache.calcite.linq4j.JoinType;
-import org.apache.calcite.linq4j.Ord;
+import org.apache.calcite.linq4j.*;
 import org.apache.calcite.linq4j.function.Function1;
 import org.apache.calcite.linq4j.function.Function2;
 import org.apache.calcite.linq4j.function.Predicate2;
@@ -45,8 +41,10 @@ import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexJsonTable;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexProgramBuilder;
+import org.apache.calcite.runtime.JsonFunctions;
 import org.apache.calcite.runtime.SortedMultiMap;
 import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.runtime.Utilities;
@@ -57,6 +55,8 @@ import org.apache.calcite.util.Util;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+
+import org.apache.commons.lang3.SerializationUtils;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -992,6 +992,93 @@ public class EnumUtils {
 
     private static Pair<Long, Long> computeInitWindow(long ts, long gap) {
       return new Pair<>(ts, ts + gap);
+    }
+  }
+
+  public static Enumerable<@Nullable Object[]> jsonTable(
+      List<Object[]> list
+  ) {
+    return new AbstractEnumerable<Object[]>() {
+      @Override
+      public Enumerator<Object[]> enumerator() {
+        return new JsonTableResultEnumerator(new ArrayDeque<>(list));
+      }
+    };
+  }
+
+  private static class JsonTableResultEnumerator implements Enumerator<@Nullable Object[]> {
+    private final Deque<Object[]> list;
+
+    public JsonTableResultEnumerator(Deque<Object[]> list) {
+      this.list = list;
+    }
+
+    @Override
+    public Object[] current() {
+      return takeOne();
+    }
+
+    @Override
+    public boolean moveNext() {
+      return list.size() > 0;
+    }
+
+    @Override
+    public void reset() {
+    }
+
+    @Override
+    public void close() {
+    }
+
+    private @Nullable Object[] takeOne() {
+      return requireNonNull(list.pollFirst(), "list.pollFirst()");
+    }
+  }
+
+  public static class JsonTableEnumerator implements Enumerator<@Nullable Object[]> {
+
+    private final Enumerator<@Nullable Object[]> inputEnumerator;
+
+    private final RexJsonTable.JsonTableInfo jsonTableInfo;
+    private final Deque<@Nullable Object[]> list;
+
+    public JsonTableEnumerator(
+        Enumerator<@Nullable Object[]> inputEnumerator,
+        byte[] serializedJsonTableInfo) {
+      this.inputEnumerator = inputEnumerator;
+      this.jsonTableInfo = SerializationUtils.deserialize(serializedJsonTableInfo);
+      this.list = new ArrayDeque<>();
+    }
+
+    @Override
+    public @Nullable Object[] current() {
+      if (list.size() > 0) {
+        return takeOne();
+      } else {
+        // parse the json table here.
+        JsonFunctions.jsonTable(null, jsonTableInfo);
+        return  null;
+      }
+    }
+
+    @Override
+    public boolean moveNext() {
+      return list.size() > 0 || inputEnumerator.moveNext();
+    }
+
+    @Override
+    public void reset() {
+      inputEnumerator.reset();
+      list.clear();
+    }
+
+    @Override
+    public void close() {
+    }
+
+    private @Nullable Object[] takeOne() {
+      return requireNonNull(list.pollFirst(), "list.pollFirst()");
     }
   }
 

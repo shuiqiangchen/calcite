@@ -7841,9 +7841,12 @@ public class JdbcTest {
 //    rootSchema.add("bookclub", new ReflectiveSchema(new BookClubSchema()));
 //    calciteConnection.setSchema("bookclub");
 
-    String sql = "SELECT jt.rowseq, jt.name, jt.zip FROM members, JSON_TABLE (members.jcol, " +
-        "\"lax $\" COLUMNS ( rowSeq FOR ORDINALITY, name VARCHAR(30) PATH 'lax $.Name', zip CHAR(5) " +
-        "PATH 'lax$.address.postalCode')) AS jt";
+//    String sql = "SELECT jt.rowseq, jt.name, jt.zip FROM members, JSON_TABLE (members.jcol, " +
+//        "\"lax $\" COLUMNS ( rowSeq FOR ORDINALITY, name VARCHAR(30) PATH 'lax $.Name', zip CHAR(5) " +
+//        "PATH 'lax$.address.postalCode')) AS jt";
+    String sql = "SELECT jt.name, jt.zip FROM members, JSON_TABLE (members.jcol, " +
+        "\"lax $\" COLUMNS (name VARCHAR(30) PATH 'lax $.Name', zip CHAR(5) " +
+        "PATH 'lax $.address.postalCode')) AS jt";
     CalciteAssert.that(CalciteAssert.Config.BOOK_CLUB)
         .query(sql)
         .returns("null");

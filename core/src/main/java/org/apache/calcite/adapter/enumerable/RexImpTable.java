@@ -38,30 +38,14 @@ import org.apache.calcite.linq4j.tree.Primitive;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeFactoryImpl;
-import org.apache.calcite.rex.RexCall;
-import org.apache.calcite.rex.RexInputRef;
-import org.apache.calcite.rex.RexLiteral;
-import org.apache.calcite.rex.RexNode;
-import org.apache.calcite.rex.RexPatternFieldRef;
+import org.apache.calcite.rex.*;
 import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.schema.FunctionContext;
 import org.apache.calcite.schema.ImplementableAggFunction;
 import org.apache.calcite.schema.ImplementableFunction;
 import org.apache.calcite.schema.impl.AggregateFunctionImpl;
-import org.apache.calcite.sql.SqlAggFunction;
-import org.apache.calcite.sql.SqlBinaryOperator;
-import org.apache.calcite.sql.SqlJsonConstructorNullClause;
-import org.apache.calcite.sql.SqlJsonEmptyOrError;
-import org.apache.calcite.sql.SqlJsonValueEmptyOrErrorBehavior;
-import org.apache.calcite.sql.SqlKind;
-import org.apache.calcite.sql.SqlMatchFunction;
-import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.SqlTypeConstructorFunction;
-import org.apache.calcite.sql.SqlWindowTableFunction;
-import org.apache.calcite.sql.fun.SqlJsonArrayAggAggFunction;
-import org.apache.calcite.sql.fun.SqlJsonObjectAggAggFunction;
-import org.apache.calcite.sql.fun.SqlStdOperatorTable;
-import org.apache.calcite.sql.fun.SqlTrimFunction;
+import org.apache.calcite.sql.*;
+import org.apache.calcite.sql.fun.*;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.sql.validate.SqlUserDefinedAggFunction;
@@ -74,6 +58,8 @@ import org.apache.calcite.util.Util;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 
+import org.apache.commons.lang3.SerializationUtils;
+
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.lang.reflect.Constructor;
@@ -83,6 +69,7 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.chrono.IsoEra;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -567,6 +554,7 @@ public class RexImpTable {
     tvfImplementorMap.put(TUMBLE, TumbleImplementor::new);
     tvfImplementorMap.put(HOP, HopImplementor::new);
     tvfImplementorMap.put(SESSION, SessionImplementor::new);
+//    tvfImplementorMap.put(JSON_TABLE, JsonTablizeImplementor::new);
   }
 
   private static <T> Supplier<T> constructorSupplier(Class<T> klass) {
@@ -714,6 +702,16 @@ public class RexImpTable {
   }
 
   public TableFunctionCallImplementor get(final SqlWindowTableFunction operator) {
+    final Supplier<? extends TableFunctionCallImplementor> supplier =
+        tvfImplementorMap.get(operator);
+    if (supplier != null) {
+      return supplier.get();
+    } else {
+      throw new IllegalStateException("Supplier should not be null");
+    }
+  }
+
+  public TableFunctionCallImplementor get(final SqlJsonTableFunction operator) {
     final Supplier<? extends TableFunctionCallImplementor> supplier =
         tvfImplementorMap.get(operator);
     if (supplier != null) {
@@ -2076,9 +2074,25 @@ public class RexImpTable {
 
       final Type returnType =
           translator.typeFactory.getJavaClass(call.getType());
+
       return EnumUtils.convert(expression, returnType);
     }
   }
+
+//  private static class JsonTablizeImplementor implements TableFunctionCallImplementor {
+//    @Override
+//    public Expression implement(RexToLixTranslator translator, Expression inputEnumerable,
+//        RexCall call, PhysType inputPhysType, PhysType outputPhysType) {
+//      RexJsonTable rexJsonTable = (RexJsonTable) call;
+//
+//      byte[] serializedJsonTableInfo = SerializationUtils.serialize(rexJsonTable.getTableInfo());
+//      Expression jsonTableInfo = Expressions.constant(serializedJsonTableInfo);
+//      return Expressions.call(BuiltInMethod.JSON_TABLIZE.method,
+//          Expressions.list(Expressions.call(inputEnumerable, BuiltInMethod.ENUMERABLE_ENUMERATOR.method),
+//              jsonTableInfo
+//          ));
+//    }
+//  }
 
   private static class JsonTableImplementor extends MethodImplementor {
 
@@ -2089,7 +2103,39 @@ public class RexImpTable {
     @Override
     Expression implementSafe(RexToLixTranslator translator, RexCall call,
         List<Expression> argValueList) {
-      return null;
+      RexJsonTable rexJsonTable = (RexJsonTable) call;
+      final Expression expression;
+//      RexJsonTable.JsonTableInfo jsonTableInfo = rexJsonTable.getTableInfo();
+      byte[] serializedJsonTableInfo = SerializationUtils.serialize(rexJsonTable.getTableInfo());
+
+
+
+      final List<Expression> newOperands = new ArrayList<>();
+//      Expression jsonTableInfo = Expressions.constant(rexJsonTable.getTableInfo().getColumns().toArray(new RexJsonTable.JsonTableColumn[0]));
+      Expression jsonTableInfo = Expressions.constant(serializedJsonTableInfo);
+//      Expression jsonTableInfo = Expressions.constant(rexJsonTable.getTableInfo(), RexJsonTable.JsonTableInfo.class);
+//      Expression pathSpec = Expressions.constant(rexJsonTable.getPathSpec());
+//      Expression columns = Expressions.list(rexJsonTable.getColumns());//Expressions.constant(rexJsonTable.getColumns());
+//      Expression plans = Expressions.constant(rexJsonTable.getPlanClause());
+//      Expression errorBehavior = Expressions.constant(rexJsonTable.getErrorBehavior());
+      newOperands.add(argValueList.get(0));
+      newOperands.add(jsonTableInfo);
+//      newOperands.add(pathSpec);
+//      newOperands.add(Expressions.constant(null));
+//      newOperands.add(plans);
+//      newOperands.add(errorBehavior);
+
+      Class clz = method.getDeclaringClass();
+      expression = EnumUtils.call(null, clz, method.getName(), newOperands);
+      final Type returnType = translator.typeFactory.getJavaClass(call.getType());
+      return EnumUtils.convert(expression, returnType);
+//      return Expressions.call(BuiltInMethod.JSON_TABLIZE,
+//          )
+//      return Expressions.call(BuiltInMethod.JSON_TABLIZE.method,
+//          Expressions.list(
+//              Expressions.call()
+//          ))
+//      return null;
     }
   }
 

@@ -148,7 +148,7 @@ public abstract class SqlJsonTableColumn extends SqlCall {
 
       if (leftColumnInfos.size() > 0) {
         SqlNode columnInfo = leftColumnInfos.get(0);
-        if (columnInfo instanceof SqlIdentifier) {
+        if (columnInfo instanceof SqlLiteral) {
           pathSpec = columnInfo;
         }
         for (int i = 0; i < leftColumnInfos.size(); i++) {
@@ -253,7 +253,7 @@ public abstract class SqlJsonTableColumn extends SqlCall {
       List<SqlNode> leftColumnInfos = Util.skip(columnInfos, 2);
       if (leftColumnInfos.size() > 0) {
         SqlNode columnInfo = leftColumnInfos.get(0);
-        if (columnInfo instanceof SqlIdentifier) {
+        if (columnInfo instanceof SqlLiteral) {
           pathSpec = columnInfo;
         }
 

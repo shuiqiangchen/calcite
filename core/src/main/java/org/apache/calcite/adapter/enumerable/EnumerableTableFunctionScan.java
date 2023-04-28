@@ -32,6 +32,7 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.schema.QueryableTable;
 import org.apache.calcite.schema.impl.TableFunctionImpl;
 import org.apache.calcite.sql.SqlWindowTableFunction;
+import org.apache.calcite.sql.fun.SqlJsonTableFunction;
 import org.apache.calcite.sql.validate.SqlConformance;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
 import org.apache.calcite.sql.validate.SqlUserDefinedTableFunction;
@@ -80,6 +81,10 @@ public class EnumerableTableFunctionScan extends TableFunctionScan
         && RexImpTable.INSTANCE.get((SqlWindowTableFunction) call.getOperator()) != null) {
       return true;
     }
+//    else if (call.getOperator() instanceof SqlJsonTableFunction
+//        && RexImpTable.INSTANCE.get((SqlJsonTableFunction) call.getOperator()) != null) {
+//      return true;
+//    }
     return false;
   }
 

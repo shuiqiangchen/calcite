@@ -16,6 +16,9 @@
  */
 package org.apache.calcite.runtime;
 
+import org.apache.calcite.adapter.enumerable.EnumUtils;
+import org.apache.calcite.rex.RexJsonTable;
+import org.apache.calcite.rex.RexJsonTable.*;;
 import org.apache.calcite.sql.*;
 import org.apache.calcite.util.Util;
 
@@ -31,6 +34,8 @@ import com.jayway.jsonpath.Option;
 import com.jayway.jsonpath.spi.json.JacksonJsonProvider;
 import com.jayway.jsonpath.spi.mapper.JacksonMappingProvider;
 import com.jayway.jsonpath.spi.mapper.MappingProvider;
+
+import org.apache.commons.lang3.SerializationUtils;
 
 import org.checkerframework.checker.nullness.qual.EnsuresNonNullIf;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -373,51 +378,104 @@ public class JsonFunctions {
 
   public static Object jsonTable(
       String input,
-      String pathSpec,
-      Object columnInfos,
-      Object planClause,
-      SqlJsonTableErrorBehavior errorBehavior) {
-
-      JsonPathContext pathContext = jsonApiCommonSyntax(input, pathSpec);
-      return null;
+      Object serializedJsonTableInfo) {
+    JsonTableInfo jsonTableInfo =
+        SerializationUtils.deserialize((byte[]) serializedJsonTableInfo);
+    JsonPathContext pathContext = jsonApiCommonSyntax(input, jsonTableInfo.getPathSpec());
+    JsonTableParser jsonTableParser = new JsonTableParser(
+        (JsonTablePlan) jsonTableInfo.getPlanClause(),
+        (SqlJsonTableErrorBehavior) jsonTableInfo.getErrorBehavior());
+    List<JsonTableColumn> columns = jsonTableInfo.getColumns();
+    List<Object> result = new ArrayList<>();
+    for (JsonTableColumn jsonTableColumn : columns) {
+      if (jsonTableColumn instanceof JsonTableRegularColumn) {
+        result.add(jsonTableParser.parseRegularColumn(
+            JsonValueContext.withJavaObj(pathContext.obj),
+            (JsonTableRegularColumn) jsonTableColumn));
+      }
+    }
+    return EnumUtils.jsonTable(Collections.singletonList(result.toArray(new Object[0])));
 
   }
 
-  private static class JsonTableParser {
-    private final List<SqlJsonTableColumn> columns;
-    private final List<SqlNode> planClause;
+  public static Object parseJsonTableColumn(
+      JsonValueContext valueContext,
+      JsonTableColumn tableColumn,
+      JsonTablePlan tablePlan,
+      SqlJsonTableErrorBehavior errorBehavior
+  ) {
+    if (tableColumn instanceof JsonTableRegularColumn) {
+      JsonTableRegularColumn regularColumn = (JsonTableRegularColumn) tableColumn;
+      Object value = jsonValue(
+          valueContext,
+          regularColumn.getPathSpec(),
+          SqlJsonValueEmptyOrErrorBehavior.valueOf(regularColumn.getEmptyBehavior().name()),
+          regularColumn.getDefaultEmptyValue(),
+          SqlJsonValueEmptyOrErrorBehavior.valueOf(regularColumn.getErrorBehavior().name()),
+          regularColumn.getDefaultErrorValue());
+      return value;
+    } else if (tableColumn instanceof JsonTableNestedColumn) {
+      JsonTableNestedColumn nestedColumn = (JsonTableNestedColumn) tableColumn;
+
+      List<JsonTableColumn> columns = nestedColumn.getColumns();
+      List<Object> columnValues = new ArrayList<>();
+      JsonPathContext nestedPathContext =
+          jsonApiCommonSyntax(valueContext, nestedColumn.getPathSpec());
+      Object[] rows = (Object[]) nestedPathContext.obj;
+      //todo
+    }
+    return null;
+  }
+
+private static class JsonTableParser {
+    private final RexJsonTable.JsonTablePlan tablePlan;
+
     private final SqlJsonTableErrorBehavior errorBehavior;
-    public JsonTableParser(
-        List<SqlJsonTableColumn> columns,
-        List<SqlNode> planClause,
-        SqlJsonTableErrorBehavior errorBehavior) {
-        this.columns = columns;
-        this.planClause = planClause;
-        this.errorBehavior = errorBehavior;
-    }
 
-    private Object parserOrdinarilyColumn() {
-      return null;
-    }
-
-    private Object parseRegularColumn(
-        JsonValueContext input
-//        String jsonPathSpec,
-        ) {
-//      List<SqlNode> columnInfo = regularColumn.getOperandList();
-//      String jsonPathSpec = buildJsonPathSpec(((SqlIdentifier)columnInfo.get(0)).getSimple());
-//      if (columnInfo.size() > 2) {
-//        if (columnInfo.get(3) instanceof SqlIdentifier) {
-//          jsonPathSpec = ((SqlIdentifier) columnInfo.get(3)).getSimple();
-//        }
-//      }
-
-
-
-      return null;
-    }
-
+  public JsonTableParser(RexJsonTable.JsonTablePlan tablePlan,
+      SqlJsonTableErrorBehavior errorBehavior) {
+    this.tablePlan = tablePlan;
+    this.errorBehavior = errorBehavior;
   }
+
+  public Object parseRegularColumn(
+      JsonValueContext valueContext,
+      JsonTableRegularColumn regularColumn) {
+    return jsonValue(
+        valueContext,
+        regularColumn.getPathSpec(),
+        SqlJsonValueEmptyOrErrorBehavior.valueOf(regularColumn.getEmptyBehavior().name()),
+        regularColumn.getDefaultEmptyValue(),
+        SqlJsonValueEmptyOrErrorBehavior.valueOf(regularColumn.getErrorBehavior().name()),
+        regularColumn.getDefaultErrorValue());
+  }
+
+  public List<Object[]> parseNestedColumn(
+      JsonValueContext valueContext,
+      JsonTableNestedColumn nestedColumn
+  ) {
+    List<JsonTableColumn> columns = nestedColumn.getColumns();
+    String nestedPathSpec = nestedColumn.getPathSpec();
+    List<Object[]> returnRows = new ArrayList<>();
+
+    JsonPathContext nestedPathContext =
+        jsonApiCommonSyntax(valueContext, nestedColumn.getPathSpec());
+    Object[] nestedRows = (Object[]) nestedPathContext.obj;
+    for (Object nestedRow : nestedRows) {
+      JsonValueContext nestedValueCtx = JsonValueContext.withJavaObj(nestedRow);
+      Object[] parsedValues = new Object[columns.size()];
+      for (int i = 0; i < columns.size(); i++) {
+        JsonTableColumn column = columns.get(i);
+        if (column instanceof JsonTableRegularColumn) {
+          parsedValues[i] = parseRegularColumn(nestedValueCtx, (JsonTableRegularColumn) column);
+        } else if (column instanceof JsonTableNestedColumn) {
+          parsedValues[i] = parseNestedColumn(nestedValueCtx, (JsonTableNestedColumn) column);
+        }
+      }
+    }
+    return Collections.emptyList();
+  }
+}
 
   public static String jsonObject(SqlJsonConstructorNullClause nullClause,
       @Nullable Object... kvs) {
@@ -862,4 +920,22 @@ public class JsonFunctions {
     UNKNOWN,
     NONE
   }
+
+  public static void main(String[] args) {
+    String jcol = "{\"Name\":\"John Smith\",\"address\":{\"streetAddress\":\"21 2nd " +
+        "Street\",\"city\":\"New York\",\"state\":\"NY\",\"postalCode\":10021}," +
+        "\"phoneNumber\":[{\"type\":\"home\",\"number\":\"212 555-1234\"},{\"type\":\"fax\"," +
+        "\"number\":\"646 555-4567\"}],\"books\":[{\"title\":\"The Talisman\"," +
+        "\"authorList\":[\"Stephen King\",\"Peter Straub\"],\"category\":[\"SciFi\"," +
+        "\"Novel\"]},{\"title\":\"Far from the Madding Crowd\",\"authorList\":[\"Thomas " +
+        "Hardy\"],\"category\":[\"Novel\"]}]}";
+    JsonValueContext valueContext = jsonValueExpression(jcol);
+    JsonPathContext nestPathContext = jsonApiCommonSyntax(valueContext, "lax $.books[*]");
+    assert nestPathContext.obj instanceof Collection;
+
+
+    Object jVal = jsonValue(valueContext, "lax $.books[*]", SqlJsonValueEmptyOrErrorBehavior.ERROR, null, SqlJsonValueEmptyOrErrorBehavior.NULL, null);
+    System.out.println(jVal);
+  }
+
 }

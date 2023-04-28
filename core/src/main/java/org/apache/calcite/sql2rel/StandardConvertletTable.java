@@ -26,6 +26,7 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexCallBinding;
+import org.apache.calcite.rex.RexJsonTable;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexRangeRef;
@@ -58,6 +59,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorImpl;
+import org.apache.calcite.util.NlsString;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
@@ -70,6 +72,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -765,18 +768,74 @@ public class StandardConvertletTable extends ReflectiveConvertletTable {
     List<SqlNode> operands = call.getOperandList();
     final List<RexNode> exprs = new ArrayList<>();
     exprs.add(ctx.convertExpression(operands.get(0)));
-    exprs.add(ctx.convertExpression(operands.get(1)));
-    // convert columns
-    exprs.add(convertJsonTableColumn(ctx, (SqlJsonTableColumn) operands.get(2)));
-    // convert plan
+    String pathSpec = ((SqlLiteral)operands.get(1)).getValueAs(NlsString.class).getValue();
+    List<RexJsonTable.JsonTableColumn> columns =
+        ((SqlJsonTableColumn.SqlJsonTableColumnClause)operands.get(2)).getOperandList()
+            .stream().map(sqlNode -> convertJsonTableColumn((SqlJsonTableColumn) sqlNode))
+            .collect(Collectors.toList());
+    Object planClause = null;
+    Object errorBehavior = null;
+//    exprs.add(ctx.convertExpression(operands.get(1)));
+//    // convert columns
+//    exprs.add(convertJsonTableColumn(ctx, (SqlJsonTableColumn) operands.get(2)));
+//    // convert plan
     exprs.add(convertJsonTablePlan(ctx, (SqlJsonTablePlanBase) operands.get(3)));
-    // convert error behavior
-    exprs.add(ctx.convertExpression(operands.get(4)));
+//    // convert error behavior
+//    exprs.add(ctx.convertExpression(operands.get(4)));
 
-    RelDataType returnType =
-    ctx.getValidator().getValidatedNodeTypeIfKnown(call);
+    RelDataType returnType = ctx.getValidator().getValidatedNodeTypeIfKnown(call);
     requireNonNull(returnType, () -> "Unable to get type of " + call);
-    return ctx.getRexBuilder().makeCall(returnType, func, exprs);
+//    return ctx.getRexBuilder().makeCall(returnType, func, exprs);
+    return new RexJsonTable(
+        returnType,
+        call.getOperator(),
+        exprs,
+        pathSpec,
+        columns,
+        planClause,
+        errorBehavior
+    );
+  }
+
+  private RexJsonTable.JsonTableColumn convertJsonTableColumn(
+      SqlJsonTableColumn column
+  ) {
+    if (column instanceof SqlJsonTableColumn.SqlJsonTableOrdinalityColumn) {
+      return new RexJsonTable.JsonTableOrdinalityColumn(
+          ((SqlIdentifier) column.getOperandList().get(0)).getSimple());
+    } else if (column instanceof SqlJsonTableColumn.SqlJsonTableRegularColumn) {
+      List<SqlNode> operands = column.getOperandList();
+      String columnName = ((SqlIdentifier) operands.get(0)).getSimple();
+      String pathSpec =
+          ((SqlCharStringLiteral) operands.get(2)).getValueAs(NlsString.class).getValue();
+      SqlJsonTableColumnEmptyOrErrorBehavior emptyBehavior =
+          ((SqlLiteral) operands.get(3)).getValueAs(SqlJsonTableColumnEmptyOrErrorBehavior.class);
+      SqlJsonTableColumnEmptyOrErrorBehavior errorBehavior =
+          ((SqlLiteral) operands.get(4)).getValueAs(SqlJsonTableColumnEmptyOrErrorBehavior.class);
+      return new RexJsonTable.JsonTableRegularColumn(
+          columnName,
+          pathSpec,
+          emptyBehavior,
+          null,
+          errorBehavior,
+          null);
+    } else if (column instanceof SqlJsonTableColumn.SqlJsonTableNestedColumn) {
+      List<SqlNode> operands = column.getOperandList();
+      String pathSpec = ((SqlIdentifier) operands.get(0)).getSimple();
+      int currentIdx = 1;
+      String pathName = null;
+      if (operands.get(currentIdx) instanceof SqlIdentifier) {
+        pathName = ((SqlIdentifier) operands.get(currentIdx)).getSimple();
+        currentIdx++;
+      }
+      List<RexJsonTable.JsonTableColumn> columns = ((List<SqlNode>)operands.get(currentIdx))
+          .stream()
+          .map(sqlNode -> convertJsonTableColumn((SqlJsonTableColumn)sqlNode))
+          .collect(Collectors.toList());
+      return new RexJsonTable.JsonTableNestedColumn(null, pathSpec, pathName, columns);
+    } else {
+      throw new UnsupportedOperationException("Unsupported column: " + column);
+    }
   }
 
   private RexNode convertJsonTableColumn(
